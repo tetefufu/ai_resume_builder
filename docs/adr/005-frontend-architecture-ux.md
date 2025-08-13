@@ -514,6 +514,492 @@ const useDebounced = <T>(value: T, delay: number): T => {
 };
 ```
 
+### PDF Generation and Alternatives
+
+We will primarily use **React PDF** for client-side PDF generation, but remain open to alternatives based on performance and feature requirements:
+
+#### React PDF
+- **Pros**: Client-side generation, React-like syntax, good TypeScript support
+- **Cons**: Limited styling options, larger bundle size
+- **Use Case**: Simple resume layouts with consistent formatting
+
+#### Alternative Options
+- **Puppeteer**: Server-side PDF generation with full HTML/CSS support
+- **jsPDF**: Lightweight, programmatic PDF creation
+- **PDFKit**: Low-level PDF generation with fine control
+- **HTML-to-PDF Services**: External services like Browserless or PDF Shift
+
+#### Decision Criteria
+- **Performance**: Client vs server-side generation trade-offs
+- **Styling Flexibility**: Need for complex layouts and designs
+- **Bundle Size**: Impact on application load time
+- **Maintenance**: Complexity of implementation and updates
+
+```typescript
+// PDF Generation Service Interface
+interface PDFGenerationService {
+  generateResume(content: ResumeContent, template: Template): Promise<Blob>;
+  previewResume(content: ResumeContent, template: Template): Promise<string>; // Base64 or URL
+  getSupportedTemplates(): Template[];
+}
+
+// React PDF Implementation
+class ReactPDFService implements PDFGenerationService {
+  async generateResume(content: ResumeContent, template: Template): Promise<Blob> {
+    const doc = (
+      <Document>
+        <Page size="A4" style={template.styles}>
+          <ResumeTemplate content={content} template={template} />
+        </Page>
+      </Document>
+    );
+    
+    return await pdf(doc).toBlob();
+  }
+}
+
+// Alternative: Server-side PDF generation
+class ServerPDFService implements PDFGenerationService {
+  async generateResume(content: ResumeContent, template: Template): Promise<Blob> {
+    const response = await fetch('/api/generate-pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content, template })
+    });
+    
+    return await response.blob();
+  }
+}
+```
+
+## Coding Practices and Standards
+
+### SOLID Principles Implementation
+
+#### 1. Single Responsibility Principle (SRP)
+Each component and function should have a single, well-defined responsibility.
+
+```typescript
+// ❌ Bad: Component doing too many things
+const CVUploadPage: React.FC = () => {
+  // File upload logic
+  // PDF parsing logic
+  // Form validation
+  // API calls
+  // UI rendering
+  // Error handling
+  return <div>...</div>;
+};
+
+// ✅ Good: Separated responsibilities
+const CVUploadPage: React.FC = () => {
+  return (
+    <div className="cv-upload-page">
+      <PageHeader title="Upload CV" />
+      <CVUploadForm />
+      <UploadProgress />
+      <CVPreview />
+    </div>
+  );
+};
+
+const CVUploadForm: React.FC = () => {
+  const { upload, progress, error } = useFileUpload();
+  // Only handles file upload UI and state
+};
+
+const CVPreview: React.FC = () => {
+  const { parsedContent } = useParsedCV();
+  // Only handles CV preview display
+};
+```
+
+#### 2. Open/Closed Principle (OCP)
+Components should be open for extension but closed for modification.
+
+```typescript
+// ✅ Extensible component design
+interface BaseInputProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  error?: string;
+  required?: boolean;
+}
+
+// Base input component
+const BaseInput: React.FC<BaseInputProps> = ({ label, error, ...props }) => {
+  return (
+    <div className="input-group">
+      <label className="input-label">{label}</label>
+      <input {...props} className="base-input" />
+      {error && <span className="input-error">{error}</span>}
+    </div>
+  );
+};
+
+// Extended components without modifying base
+const EmailInput: React.FC<Omit<BaseInputProps, 'type'>> = (props) => (
+  <BaseInput {...props} type="email" />
+);
+
+const PasswordInput: React.FC<Omit<BaseInputProps, 'type'>> = (props) => (
+  <BaseInput {...props} type="password" />
+);
+
+// Plugin-style extensions
+interface InputPlugin {
+  validate?: (value: string) => string | null;
+  transform?: (value: string) => string;
+  icon?: React.ComponentType;
+}
+
+const ExtendedInput: React.FC<BaseInputProps & { plugins?: InputPlugin[] }> = 
+  ({ plugins = [], ...props }) => {
+    // Apply plugins without modifying base component
+  };
+```
+
+#### 3. Liskov Substitution Principle (LSP)
+Derived components should be substitutable for their base components.
+
+```typescript
+// ✅ Proper substitution hierarchy
+interface ButtonProps {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+}
+
+const Button: React.FC<ButtonProps> = ({ children, onClick, disabled }) => (
+  <button onClick={onClick} disabled={disabled} className="btn">
+    {children}
+  </button>
+);
+
+// Specialized buttons that can substitute the base Button
+const PrimaryButton: React.FC<ButtonProps> = (props) => (
+  <Button {...props} className="btn btn-primary" />
+);
+
+const LoadingButton: React.FC<ButtonProps & { loading?: boolean }> = 
+  ({ loading, children, ...props }) => (
+    <Button {...props} disabled={props.disabled || loading}>
+      {loading ? <Spinner /> : children}
+    </Button>
+  );
+
+// Can be used interchangeably
+const actions = [
+  <Button onClick={handleSave}>Save</Button>,
+  <PrimaryButton onClick={handleSubmit}>Submit</PrimaryButton>,
+  <LoadingButton onClick={handleProcess} loading={isProcessing}>Process</LoadingButton>
+];
+```
+
+#### 4. Interface Segregation Principle (ISP)
+Create specific interfaces rather than large, monolithic ones.
+
+```typescript
+// ❌ Bad: Fat interface
+interface CVOperations {
+  upload: (file: File) => Promise<void>;
+  parse: (content: string) => CVContent;
+  enhance: (content: CVContent, job: JobDescription) => Promise<CVContent>;
+  generatePDF: (content: CVContent) => Promise<Blob>;
+  save: (content: CVContent) => Promise<void>;
+  delete: (id: string) => Promise<void>;
+}
+
+// ✅ Good: Segregated interfaces
+interface CVUploadOperations {
+  upload: (file: File) => Promise<void>;
+  parse: (content: string) => CVContent;
+}
+
+interface CVEnhancementOperations {
+  enhance: (content: CVContent, job: JobDescription) => Promise<CVContent>;
+}
+
+interface CVStorageOperations {
+  save: (content: CVContent) => Promise<void>;
+  delete: (id: string) => Promise<void>;
+}
+
+interface CVExportOperations {
+  generatePDF: (content: CVContent) => Promise<Blob>;
+}
+
+// Components only depend on what they need
+const CVUploader: React.FC = () => {
+  const { upload, parse } = useService<CVUploadOperations>('cvUpload');
+  // Only has access to upload operations
+};
+
+const CVEnhancer: React.FC = () => {
+  const { enhance } = useService<CVEnhancementOperations>('cvEnhancement');
+  // Only has access to enhancement operations
+};
+```
+
+#### 5. Dependency Inversion Principle (DIP)
+Depend on abstractions, not concretions.
+
+```typescript
+// ✅ Abstract service interfaces
+interface StorageService {
+  upload(file: File, path: string): Promise<string>;
+  download(url: string): Promise<Blob>;
+  delete(url: string): Promise<void>;
+}
+
+interface AIService {
+  enhanceContent(content: string, context: string): Promise<string>;
+  analyzeContent(content: string): Promise<AnalysisResult>;
+}
+
+// Concrete implementations
+class FirebaseStorageService implements StorageService {
+  async upload(file: File, path: string): Promise<string> {
+    // Firebase-specific implementation
+  }
+}
+
+class OpenAIService implements AIService {
+  async enhanceContent(content: string, context: string): Promise<string> {
+    // OpenAI-specific implementation
+  }
+}
+
+// Components depend on abstractions
+const CVUploader: React.FC = () => {
+  const storageService = useService<StorageService>('storage');
+  const aiService = useService<AIService>('ai');
+  
+  // Can work with any implementation of these interfaces
+};
+
+// Dependency injection setup
+const ServiceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const services = {
+    storage: new FirebaseStorageService(),
+    ai: new OpenAIService(),
+  };
+  
+  return (
+    <ServiceContext.Provider value={services}>
+      {children}
+    </ServiceContext.Provider>
+  );
+};
+```
+
+### Component Architecture Guidelines
+
+#### Small, Focused Components
+Err on the side of creating many small files rather than large, monolithic components.
+
+```typescript
+// ✅ File structure for CV upload feature
+src/
+├── components/
+│   ├── cv-upload/
+│   │   ├── index.ts                    // Export barrel
+│   │   ├── CVUploadPage.tsx           // Main page component
+│   │   ├── CVUploadForm.tsx           // Form wrapper
+│   │   ├── FileDropzone.tsx           // Drag & drop area
+│   │   ├── FilePreview.tsx            // File preview
+│   │   ├── UploadProgress.tsx         // Progress indicator
+│   │   ├── ParsedContentPreview.tsx   // Parsed content display
+│   │   ├── ValidationErrors.tsx       // Error display
+│   │   └── hooks/
+│   │       ├── useFileUpload.ts       // Upload logic
+│   │       ├── useFileValidation.ts   // Validation logic
+│   │       └── useParsedContent.ts    // Content parsing
+│   ├── ui/                            // Reusable UI components
+│   │   ├── Button/
+│   │   │   ├── Button.tsx
+│   │   │   ├── Button.types.ts
+│   │   │   └── index.ts
+│   │   ├── Input/
+│   │   │   ├── Input.tsx
+│   │   │   ├── Input.types.ts
+│   │   │   └── index.ts
+│   │   └── Modal/
+│   │       ├── Modal.tsx
+│   │       ├── Modal.types.ts
+│   │       └── index.ts
+│   └── common/                        // Shared business components
+│       ├── ErrorBoundary/
+│       ├── LoadingSpinner/
+│       └── PageHeader/
+
+// ✅ Small, focused components
+const FileDropzone: React.FC<FileDropzoneProps> = ({ onFileSelect, accept, maxSize }) => {
+  // Only handles file drop functionality - ~50 lines
+};
+
+const UploadProgress: React.FC<UploadProgressProps> = ({ progress, status }) => {
+  // Only displays upload progress - ~30 lines
+};
+
+const ValidationErrors: React.FC<ValidationErrorsProps> = ({ errors }) => {
+  // Only displays validation errors - ~20 lines
+};
+```
+
+#### Component Composition Patterns
+
+```typescript
+// ✅ Composition over inheritance
+const CVUploadPage: React.FC = () => {
+  return (
+    <PageLayout>
+      <PageHeader 
+        title="Upload CV" 
+        subtitle="Upload your resume to get started"
+      />
+      
+      <Card>
+        <CardHeader>
+          <CardTitle>Select File</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CVUploadForm>
+            <FileDropzone />
+            <FileValidation />
+            <UploadProgress />
+          </CVUploadForm>
+        </CardContent>
+      </Card>
+      
+      <Conditional when={hasContent}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Preview</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ParsedContentPreview />
+          </CardContent>
+        </Card>
+      </Conditional>
+    </PageLayout>
+  );
+};
+
+// ✅ Compound components pattern
+const CVUploadForm = {
+  Root: CVUploadFormRoot,
+  Dropzone: FileDropzone,
+  Progress: UploadProgress,
+  Preview: ParsedContentPreview,
+  Errors: ValidationErrors,
+};
+
+// Usage
+<CVUploadForm.Root>
+  <CVUploadForm.Dropzone />
+  <CVUploadForm.Progress />
+  <CVUploadForm.Preview />
+  <CVUploadForm.Errors />
+</CVUploadForm.Root>
+```
+
+#### File Naming Conventions
+
+```typescript
+// ✅ Clear, descriptive file names
+src/
+├── components/
+│   ├── CVUploadPage.tsx              // PascalCase for components
+│   ├── CVUploadForm.tsx
+│   ├── FileDropzone.tsx
+│   └── hooks/
+│       ├── useFileUpload.ts          // camelCase for hooks
+│       ├── useValidation.ts
+│       └── useParsedContent.ts
+├── services/
+│   ├── firebaseService.ts            // camelCase for services
+│   ├── pdfParsingService.ts
+│   └── aiEnhancementService.ts
+├── types/
+│   ├── CVTypes.ts                    // PascalCase for type files
+│   ├── JobTypes.ts
+│   └── index.ts                      // Export barrel
+└── utils/
+    ├── fileValidation.ts             // camelCase for utilities
+    ├── pdfParser.ts
+    └── formatters.ts
+```
+
+#### Component Testing Strategy
+
+```typescript
+// ✅ Component-specific test files
+src/
+├── components/
+│   ├── CVUploadPage/
+│   │   ├── CVUploadPage.tsx
+│   │   ├── CVUploadPage.test.tsx     // Co-located tests
+│   │   ├── CVUploadPage.stories.tsx  // Storybook stories
+│   │   └── index.ts
+│   └── FileDropzone/
+│       ├── FileDropzone.tsx
+│       ├── FileDropzone.test.tsx
+│       ├── FileDropzone.stories.tsx
+│       └── index.ts
+
+// ✅ Test structure following component structure
+describe('CVUploadPage', () => {
+  describe('FileDropzone', () => {
+    it('should accept valid file types', () => {});
+    it('should reject invalid file types', () => {});
+    it('should handle drag and drop', () => {});
+  });
+  
+  describe('UploadProgress', () => {
+    it('should display progress percentage', () => {});
+    it('should show completion state', () => {});
+  });
+  
+  describe('ValidationErrors', () => {
+    it('should display file size errors', () => {});
+    it('should display file type errors', () => {});
+  });
+});
+```
+
+### Code Organization Benefits
+
+#### Maintainability
+- **Easy to Locate**: Features organized in dedicated folders
+- **Small Surface Area**: Each file has a focused responsibility
+- **Clear Dependencies**: Import/export relationships are explicit
+
+#### Testability
+- **Isolated Testing**: Small components are easier to test
+- **Mocking**: Dependencies can be easily mocked
+- **Coverage**: Easier to achieve comprehensive test coverage
+
+#### Reusability
+- **Component Library**: Small components become reusable building blocks
+- **Composition**: Components can be combined in different ways
+- **Extensibility**: Easy to extend without modifying existing code
+
+#### Team Collaboration
+- **Reduced Conflicts**: Smaller files reduce merge conflicts
+- **Parallel Development**: Team members can work on different components
+- **Code Reviews**: Smaller changes are easier to review
+
+### Implementation Guidelines
+
+1. **Start Small**: Begin with the smallest possible component
+2. **Extract Early**: When a component reaches ~100 lines, consider extraction
+3. **Single Concern**: Each file should address one specific concern
+4. **Clear Interfaces**: Define clear props and return types
+5. **Consistent Patterns**: Follow established patterns across the codebase
+6. **Document Decisions**: Use comments to explain complex logic or decisions
+
 ## Rationale
 
 ### Why React 18 + TypeScript?

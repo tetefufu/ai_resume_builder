@@ -16,7 +16,7 @@ We will use the following technology stack:
 - **React 18** with **TypeScript** for type safety and modern component architecture
 - **Vite** as the build tool for fast development and optimized production builds
 - **Tailwind CSS** with **shadcn/ui** for rapid UI development
-- **React PDF** for PDF generation and preview
+- **React PDF** for PDF generation, preview, and manipulation (open to alternatives like Puppeteer, jsPDF, or PDFKit)
 
 ### Backend
 - **Firebase** ecosystem:
